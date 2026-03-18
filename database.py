@@ -6,11 +6,12 @@ No setup required — SQLite creates the file automatically on first run.
 
 Schema:
     reminders:
-        id          INTEGER PRIMARY KEY
-        event       TEXT        — what the reminder is about
-        remind_at   TEXT        — ISO datetime of when to send the reminder
-        created_at  TEXT        — ISO datetime of when the reminder was created
-        sent        INTEGER     — 0 = not sent, 1 = sent
+        id              INTEGER PRIMARY KEY
+        event           TEXT        — what the reminder is about
+        remind_at       TEXT        — ISO datetime (UTC) of when to send the reminder
+        user_timezone   TEXT        — timezone of the user when they set the reminder
+        created_at      TEXT        — ISO datetime of when the reminder was created
+        sent            INTEGER     — 0 = not sent, 1 = sent
 """
 
 import sqlite3
@@ -27,37 +28,50 @@ def get_connection():
 
 
 def init_db():
-    """Create the reminders table if it doesn't exist."""
+    """Create the reminders table if it doesn't exist, and migrate if needed."""
     conn = get_connection()
+
+    # Create table if it doesn't exist (new installs)
     conn.execute("""
         CREATE TABLE IF NOT EXISTS reminders (
-            id          INTEGER PRIMARY KEY AUTOINCREMENT,
-            event       TEXT NOT NULL,
-            remind_at   TEXT NOT NULL,
-            created_at  TEXT NOT NULL,
-            sent        INTEGER DEFAULT 0
+            id              INTEGER PRIMARY KEY AUTOINCREMENT,
+            event           TEXT NOT NULL,
+            remind_at       TEXT NOT NULL,
+            user_timezone   TEXT DEFAULT 'UTC',
+            created_at      TEXT NOT NULL,
+            sent            INTEGER DEFAULT 0
         )
     """)
+
+    # Migrate existing tables that don't have the user_timezone column
+    try:
+        conn.execute("SELECT user_timezone FROM reminders LIMIT 1")
+    except sqlite3.OperationalError:
+        # Column doesn't exist — add it
+        conn.execute("ALTER TABLE reminders ADD COLUMN user_timezone TEXT DEFAULT 'UTC'")
+        print("[Database] Migrated: added user_timezone column to reminders.")
+
     conn.commit()
     conn.close()
 
 
-def add_reminder(event: str, remind_at: str) -> dict:
+def add_reminder(event: str, remind_at: str, user_timezone: str = "UTC") -> dict:
     """
     Add a new reminder to the database.
-    
+
     Args:
-        event: Description of what to remind about (e.g. "UFC 327: Prochazka vs Ulberg")
-        remind_at: ISO format datetime string of when to send the reminder
-    
+        event: Description of what to remind about
+        remind_at: ISO format datetime string (UTC) of when to send the reminder
+        user_timezone: The user's timezone when they set the reminder (e.g. "America/Phoenix")
+
     Returns:
         dict with the created reminder details
     """
     created_at = datetime.now(timezone.utc).isoformat()
     conn = get_connection()
     cursor = conn.execute(
-        "INSERT INTO reminders (event, remind_at, created_at, sent) VALUES (?, ?, ?, 0)",
-        (event, remind_at, created_at),
+        "INSERT INTO reminders (event, remind_at, user_timezone, created_at, sent) VALUES (?, ?, ?, ?, 0)",
+        (event, remind_at, user_timezone, created_at),
     )
     reminder_id = cursor.lastrowid
     conn.commit()
@@ -67,6 +81,7 @@ def add_reminder(event: str, remind_at: str) -> dict:
         "id": reminder_id,
         "event": event,
         "remind_at": remind_at,
+        "user_timezone": user_timezone,
         "created_at": created_at,
         "sent": False,
     }

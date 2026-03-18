@@ -15,9 +15,10 @@ from apscheduler.schedulers.background import BackgroundScheduler
 from database import get_pending_reminders, mark_reminder_sent
 
 
-def _format_reminder_time(utc_iso: str) -> str:
-    """Format a UTC time for the email, using USER_TIMEZONE from .env."""
-    tz_name = os.getenv("USER_TIMEZONE", "America/Phoenix")
+def _format_reminder_time(utc_iso: str, tz_name: str = None) -> str:
+    """Format a UTC time for the email using the stored timezone."""
+    if not tz_name:
+        tz_name = os.getenv("USER_TIMEZONE", "UTC")
     try:
         tz = ZoneInfo(tz_name)
         dt = datetime.fromisoformat(utc_iso.replace("Z", "+00:00"))
@@ -75,7 +76,7 @@ def check_reminders():
             return
 
         for reminder in pending:
-            local_time = _format_reminder_time(reminder['remind_at'])
+            local_time = _format_reminder_time(reminder['remind_at'], reminder.get('user_timezone'))
             subject = f"Courtside Reminder: {reminder['event']}"
             body = (
                 f"Hey! This is your Courtside reminder.\n\n"

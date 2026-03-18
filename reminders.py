@@ -96,9 +96,9 @@ def create_reminder(
             "error": "Please provide either minutes_from_now or local_datetime."
         })
 
-    # Store in UTC
+    # Store in UTC, with the user's timezone for email formatting later
     remind_at_iso = remind_at_utc.isoformat()
-    result = add_reminder(event, remind_at_iso)
+    result = add_reminder(event, remind_at_iso, user_timezone)
 
     # Convert to local time for the confirmation
     local_time_str = _to_local_str(remind_at_iso, user_timezone)
