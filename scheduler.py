@@ -1,19 +1,14 @@
 """
 scheduler.py — Background reminder checker + email sender.
 
-Uses APScheduler to run a job every 60 seconds that:
-1. Queries SQLite for reminders that are due (remind_at <= now, sent = 0)
-2. Sends an email for each one via Gmail SMTP
-3. Marks each reminder as sent
+Uses Resend API (HTTPS) instead of SMTP to send emails.
+SMTP is blocked on Render's free tier; Resend uses port 443 which is always open.
 
-This runs independently of the chat flow — it doesn't need the user
-to be active in the browser for reminders to fire.
+Resend free tier: 3,000 emails/month, send from onboarding@resend.dev
 """
 
 import os
-import smtplib
-from email.mime.text import MIMEText
-from email.mime.multipart import MIMEMultipart
+import resend
 from datetime import datetime, timezone
 from zoneinfo import ZoneInfo
 from apscheduler.schedulers.background import BackgroundScheduler
@@ -21,7 +16,7 @@ from database import get_pending_reminders, mark_reminder_sent
 
 
 def _format_reminder_time(utc_iso: str) -> str:
-    """Format a UTC time for the email, using USER_TIMEZONE from .env as fallback."""
+    """Format a UTC time for the email, using USER_TIMEZONE from .env."""
     tz_name = os.getenv("USER_TIMEZONE", "America/Phoenix")
     try:
         tz = ZoneInfo(tz_name)
@@ -35,40 +30,37 @@ def _format_reminder_time(utc_iso: str) -> str:
 
 def send_email(to_address: str, subject: str, body: str) -> bool:
     """
-    Send an email via Gmail SMTP.
-    Requires GMAIL_ADDRESS and GMAIL_APP_PASSWORD in .env.
+    Send an email via Resend API (HTTPS, no SMTP needed).
+    Requires RESEND_API_KEY in .env.
     """
-    gmail_address = os.getenv("GMAIL_ADDRESS")
-    gmail_password = os.getenv("GMAIL_APP_PASSWORD")
+    api_key = os.getenv("RESEND_API_KEY")
 
-    if not gmail_address or not gmail_password:
-        print("[Scheduler] Gmail credentials not set — skipping email.")
+    if not api_key:
+        print("[Scheduler] RESEND_API_KEY not set — skipping email.")
         return False
 
     try:
-        msg = MIMEMultipart()
-        msg["From"] = gmail_address
-        msg["To"] = to_address
-        msg["Subject"] = subject
-        msg.attach(MIMEText(body, "plain"))
+        resend.api_key = api_key
 
-        with smtplib.SMTP("smtp.gmail.com", 587, timeout=15) as server:
-            server.starttls()
-            server.login(gmail_address, gmail_password)
-            server.send_message(msg)
+        params: resend.Emails.SendParams = {
+            "from": "Courtside <onboarding@resend.dev>",
+            "to": [to_address],
+            "subject": subject,
+            "text": body,
+        }
 
-        print(f"[Scheduler] Email sent: {subject}")
+        result = resend.Emails.send(params)
+        print(f"[Scheduler] Email sent via Resend: {subject} (id: {result.get('id', 'unknown')})")
         return True
 
     except Exception as e:
-        print(f"[Scheduler] Failed to send email: {e}")
+        print(f"[Scheduler] Failed to send email via Resend: {e}")
         return False
 
 
 def check_reminders():
     """
     Check for due reminders and send email notifications.
-    This function runs on a schedule (every 60 seconds).
     Wrapped in try/except so a failure never blocks the scheduler.
     """
     try:
@@ -77,7 +69,10 @@ def check_reminders():
         if not pending:
             return
 
-        gmail_address = os.getenv("GMAIL_ADDRESS")
+        to_address = os.getenv("GMAIL_ADDRESS")
+        if not to_address:
+            print("[Scheduler] GMAIL_ADDRESS not set — skipping email.")
+            return
 
         for reminder in pending:
             local_time = _format_reminder_time(reminder['remind_at'])
@@ -89,7 +84,7 @@ def check_reminders():
                 f"Enjoy the action!"
             )
 
-            success = send_email(gmail_address, subject, body)
+            success = send_email(to_address, subject, body)
 
             if success:
                 mark_reminder_sent(reminder["id"])
@@ -105,9 +100,6 @@ def start_scheduler():
     """
     Start the background scheduler.
     Runs check_reminders() every 60 seconds.
-    - max_instances=1: only one check runs at a time
-    - coalesce=True: if multiple runs were missed, only run once
-    - misfire_grace_time=120: allow jobs that are up to 2 min late to still run
     """
     scheduler = BackgroundScheduler()
     scheduler.add_job(
