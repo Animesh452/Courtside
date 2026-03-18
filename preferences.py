@@ -1,122 +1,143 @@
 """
-scheduler.py — Background reminder checker + email sender.
+preferences.py — Persistent user preference store.
 
-Uses APScheduler to run a job every 60 seconds that:
-1. Queries SQLite for reminders that are due (remind_at <= now, sent = 0)
-2. Sends an email for each one via Gmail SMTP
-3. Marks each reminder as sent
+Uses ChromaDB with persistent storage to remember what the user cares about:
+- Which sports they follow
+- Teams they ask about
+- Topics they're interested in
 
-This runs independently of the chat flow — it doesn't need the user
-to be active in the browser for reminders to fire.
+This data persists across server restarts and helps personalize responses.
+The agent checks preferences before responding to add relevant context.
 """
 
-import os
-import smtplib
-from email.mime.text import MIMEText
-from email.mime.multipart import MIMEMultipart
+import chromadb
 from datetime import datetime, timezone
-from zoneinfo import ZoneInfo
-from apscheduler.schedulers.background import BackgroundScheduler
-from database import get_pending_reminders, mark_reminder_sent
 
 
-def _format_reminder_time(utc_iso: str) -> str:
-    """Format a UTC time for the email, using USER_TIMEZONE from .env as fallback."""
-    tz_name = os.getenv("USER_TIMEZONE", "America/Phoenix")
-    try:
-        tz = ZoneInfo(tz_name)
-        dt = datetime.fromisoformat(utc_iso.replace("Z", "+00:00"))
-        local_dt = dt.astimezone(tz)
-        tz_abbr = local_dt.strftime("%Z")
-        return local_dt.strftime(f"%I:%M %p {tz_abbr} on %A, %B %d, %Y").lstrip("0")
-    except Exception:
-        return utc_iso
+# Persistent ChromaDB client — survives server restarts
+_client = chromadb.PersistentClient(path="./chroma_preferences")
 
 
-def send_email(to_address: str, subject: str, body: str) -> bool:
+def _get_collection():
+    """Get or create the preferences collection."""
+    return _client.get_or_create_collection(name="user_preferences")
+
+
+def save_preference(category: str, value: str, detail: str = "") -> str:
     """
-    Send an email via Gmail SMTP.
-    Requires GMAIL_ADDRESS and GMAIL_APP_PASSWORD in .env.
+    Save a user preference.
+    
+    Args:
+        category: Type of preference — "sport", "team", "fighter", "league", etc.
+        value: The actual preference — "UFC", "Lakers", "Ilia Topuria", etc.
+        detail: Optional extra context
+    
+    Returns:
+        Confirmation message
     """
-    gmail_address = os.getenv("GMAIL_ADDRESS")
-    gmail_password = os.getenv("GMAIL_APP_PASSWORD")
+    collection = _get_collection()
+    doc_id = f"{category}_{value}".lower().replace(" ", "_")
+    timestamp = datetime.now(timezone.utc).isoformat()
 
-    if not gmail_address or not gmail_password:
-        print("[Scheduler] Gmail credentials not set — skipping email.")
-        return False
+    document = f"User follows {category}: {value}. {detail}".strip()
 
-    try:
-        msg = MIMEMultipart()
-        msg["From"] = gmail_address
-        msg["To"] = to_address
-        msg["Subject"] = subject
-        msg.attach(MIMEText(body, "plain"))
-
-        with smtplib.SMTP_SSL("smtp.gmail.com", 465, timeout=15) as server:
-            server.login(gmail_address, gmail_password)
-            server.send_message(msg)
-
-        print(f"[Scheduler] Email sent: {subject}")
-        return True
-
-    except Exception as e:
-        print(f"[Scheduler] Failed to send email: {e}")
-        return False
-
-
-def check_reminders():
-    """
-    Check for due reminders and send email notifications.
-    This function runs on a schedule (every 60 seconds).
-    Wrapped in try/except so a failure never blocks the scheduler.
-    """
-    try:
-        pending = get_pending_reminders()
-
-        if not pending:
-            return
-
-        gmail_address = os.getenv("GMAIL_ADDRESS")
-
-        for reminder in pending:
-            local_time = _format_reminder_time(reminder['remind_at'])
-            subject = f"Courtside Reminder: {reminder['event']}"
-            body = (
-                f"Hey! This is your Courtside reminder.\n\n"
-                f"Event: {reminder['event']}\n"
-                f"Time: {local_time}\n\n"
-                f"Enjoy the action!"
-            )
-
-            success = send_email(gmail_address, subject, body)
-
-            if success:
-                mark_reminder_sent(reminder["id"])
-                print(f"[Scheduler] Reminder #{reminder['id']} sent and marked.")
-            else:
-                print(f"[Scheduler] Reminder #{reminder['id']} — email failed, will retry next cycle.")
-
-    except Exception as e:
-        print(f"[Scheduler] Error in check_reminders: {e}")
-
-
-def start_scheduler():
-    """
-    Start the background scheduler.
-    Runs check_reminders() every 60 seconds.
-    - max_instances=1: only one check runs at a time
-    - coalesce=True: if multiple runs were missed, only run once
-    - misfire_grace_time=120: allow jobs that are up to 2 min late to still run
-    """
-    scheduler = BackgroundScheduler()
-    scheduler.add_job(
-        check_reminders,
-        "interval",
-        seconds=60,
-        max_instances=1,
-        coalesce=True,
-        misfire_grace_time=120,
+    # Upsert — update if exists, create if not
+    collection.upsert(
+        ids=[doc_id],
+        documents=[document],
+        metadatas=[{
+            "category": category,
+            "value": value,
+            "detail": detail,
+            "updated_at": timestamp,
+        }],
     )
-    scheduler.start()
-    print("[Scheduler] Background reminder checker started (checking every 60s).")
-    return scheduler
+
+    return f"Noted: you follow {value} ({category})."
+
+
+def get_preferences(query: str = "", top_k: int = 5) -> list[dict]:
+    """
+    Get user preferences, optionally filtered by relevance to a query.
+    
+    Args:
+        query: If provided, returns preferences most relevant to this query
+        top_k: Max number of preferences to return
+    
+    Returns:
+        List of preference dicts
+    """
+    collection = _get_collection()
+
+    if collection.count() == 0:
+        return []
+
+    if query:
+        results = collection.query(
+            query_texts=[query],
+            n_results=min(top_k, collection.count()),
+        )
+        prefs = []
+        for i, doc in enumerate(results.get("documents", [[]])[0]):
+            metadata = results.get("metadatas", [[]])[0][i]
+            prefs.append({
+                "document": doc,
+                "category": metadata.get("category", ""),
+                "value": metadata.get("value", ""),
+            })
+        return prefs
+    else:
+        # Return all preferences
+        results = collection.get()
+        prefs = []
+        for i, doc in enumerate(results.get("documents", [])):
+            metadata = results.get("metadatas", [])[i]
+            prefs.append({
+                "document": doc,
+                "category": metadata.get("category", ""),
+                "value": metadata.get("value", ""),
+            })
+        return prefs
+
+
+def get_preference_context(query: str) -> str:
+    """
+    Get a formatted preference context string to inject into the system prompt.
+    Makes it explicit how to use preferences for personalization.
+    """
+    prefs = get_preferences(query, top_k=3)
+
+    if not prefs:
+        return ""
+
+    lines = ["USER PREFERENCES (from past interactions):"]
+    for p in prefs:
+        lines.append(f"- {p['document']}")
+    lines.append(
+        "\nWhen the user asks a vague question like 'any upcoming events?' or 'what's happening?', "
+        "use their preferences to decide which sport(s) to look up. "
+        "For example, if they follow UFC, fetch the UFC schedule."
+    )
+
+    return "\n".join(lines)
+
+
+def list_all_preferences() -> str:
+    """Return a formatted list of all stored preferences."""
+    prefs = get_preferences()
+
+    if not prefs:
+        return "No preferences saved yet. As we chat, I'll learn what sports and teams you follow."
+
+    lines = [f"I know you follow these ({len(prefs)} total):\n"]
+    for p in prefs:
+        lines.append(f"  • {p['value']} ({p['category']})")
+
+    return "\n".join(lines)
+
+
+def clear_preferences() -> str:
+    """Clear all stored preferences."""
+    global _client
+    _client.delete_collection("user_preferences")
+    return "All preferences have been cleared."

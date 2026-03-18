@@ -52,7 +52,7 @@ def send_email(to_address: str, subject: str, body: str) -> bool:
         msg["Subject"] = subject
         msg.attach(MIMEText(body, "plain"))
 
-        with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
+        with smtplib.SMTP_SSL("smtp.gmail.com", 465, timeout=15) as server:
             server.login(gmail_address, gmail_password)
             server.send_message(msg)
 
@@ -68,41 +68,55 @@ def check_reminders():
     """
     Check for due reminders and send email notifications.
     This function runs on a schedule (every 60 seconds).
+    Wrapped in try/except so a failure never blocks the scheduler.
     """
-    pending = get_pending_reminders()
+    try:
+        pending = get_pending_reminders()
 
-    if not pending:
-        return
+        if not pending:
+            return
 
-    gmail_address = os.getenv("GMAIL_ADDRESS")
+        gmail_address = os.getenv("GMAIL_ADDRESS")
 
-    for reminder in pending:
-        local_time = _format_reminder_time(reminder['remind_at'])
-        subject = f"Courtside Reminder: {reminder['event']}"
-        body = (
-            f"Hey! This is your Courtside reminder.\n\n"
-            f"Event: {reminder['event']}\n"
-            f"Time: {local_time}\n\n"
-            f"Enjoy the action!"
-        )
+        for reminder in pending:
+            local_time = _format_reminder_time(reminder['remind_at'])
+            subject = f"Courtside Reminder: {reminder['event']}"
+            body = (
+                f"Hey! This is your Courtside reminder.\n\n"
+                f"Event: {reminder['event']}\n"
+                f"Time: {local_time}\n\n"
+                f"Enjoy the action!"
+            )
 
-        # Send to yourself (personal tool)
-        success = send_email(gmail_address, subject, body)
+            success = send_email(gmail_address, subject, body)
 
-        if success:
-            mark_reminder_sent(reminder["id"])
-            print(f"[Scheduler] Reminder #{reminder['id']} sent and marked.")
-        else:
-            print(f"[Scheduler] Reminder #{reminder['id']} — email failed, will retry next cycle.")
+            if success:
+                mark_reminder_sent(reminder["id"])
+                print(f"[Scheduler] Reminder #{reminder['id']} sent and marked.")
+            else:
+                print(f"[Scheduler] Reminder #{reminder['id']} — email failed, will retry next cycle.")
+
+    except Exception as e:
+        print(f"[Scheduler] Error in check_reminders: {e}")
 
 
 def start_scheduler():
     """
     Start the background scheduler.
     Runs check_reminders() every 60 seconds.
+    - max_instances=1: only one check runs at a time
+    - coalesce=True: if multiple runs were missed, only run once
+    - misfire_grace_time=120: allow jobs that are up to 2 min late to still run
     """
     scheduler = BackgroundScheduler()
-    scheduler.add_job(check_reminders, "interval", seconds=60)
+    scheduler.add_job(
+        check_reminders,
+        "interval",
+        seconds=60,
+        max_instances=1,
+        coalesce=True,
+        misfire_grace_time=120,
+    )
     scheduler.start()
     print("[Scheduler] Background reminder checker started (checking every 60s).")
     return scheduler
