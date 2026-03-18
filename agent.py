@@ -293,6 +293,7 @@ def build_system_prompt(user_tz_name: str = "UTC", user_message: str = "") -> st
 
     now_utc = datetime.now(timezone.utc)
     now_local = now_utc.astimezone(user_tz)
+    tz_abbr = now_local.strftime('%Z')  # e.g. "MST", "EST", "PST"
 
     # Get relevant user preferences
     pref_context = get_preference_context(user_message) if user_message else ""
@@ -304,8 +305,10 @@ You are friendly, knowledgeable, and concise.
 Keep responses conversational and to the point.
 
 CURRENT TIME CONTEXT:
-- The user's timezone is {user_tz_name}.
-- The user's current local time is {now_local.strftime('%A, %B %d, %Y at %I:%M %p')} ({user_tz_name}).
+- The user's timezone is {user_tz_name} ({tz_abbr}).
+- The user's current local time is {now_local.strftime('%A, %B %d, %Y at %I:%M %p')} {tz_abbr}.
+- When displaying times to the user, ALWAYS use "{tz_abbr}" not "{user_tz_name}".
+  Example: "5:00 PM {tz_abbr}" NOT "5:00 PM {user_tz_name}".
 - Use this to resolve relative dates like "this Saturday" or "next Friday".
 {pref_block}
 AVAILABLE TOOLS:
@@ -332,7 +335,14 @@ REMINDER RULES:
 - For relative times like "in 5 minutes", "in an hour" → pass minutes_from_now to set_reminder.
 - For absolute times like "April 12 at 5pm", "Saturday at noon" → pass local_datetime 
   in "YYYY-MM-DD HH:MM" format using the user's LOCAL time. Do NOT convert to UTC.
-- The tool response includes pre-formatted local times. Use those exactly.
+- The tool response includes pre-formatted local times. Use those exactly as given.
+- NEVER output raw JSON to the user. Always write a natural confirmation message.
+
+MULTI-ACTION REQUESTS:
+- If the user asks for multiple reminders in one message, set them ONE AT A TIME.
+- NEVER skip or ignore any part of the user's request.
+- NEVER claim you deleted or removed something unless you actually called the delete tool.
+- NEVER invent actions you didn't take.
 
 PREFERENCE RULES:
 - When a user says "I follow UFC" or "I'm a Lakers fan", save it with save_user_preference.
@@ -344,7 +354,8 @@ CRITICAL RULES:
 3. NEVER invent or guess player stats, records, or career details you're unsure about.
 4. If a tool returns no data or an error, tell the user clearly.
 5. You CAN share general sports knowledge (rules, history, well-known facts) without tools.
-   But clearly distinguish between live data and general knowledge."""
+   But clearly distinguish between live data and general knowledge.
+6. NEVER output raw JSON, tool call arguments, or internal data structures to the user."""
 
 
 # ──────────────────────────────────────────────
