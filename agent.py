@@ -337,6 +337,10 @@ REMINDER RULES:
   in "YYYY-MM-DD HH:MM" format using the user's LOCAL time. Do NOT convert to UTC.
 - The tool response includes pre-formatted local times. Use those exactly as given.
 - NEVER output raw JSON to the user. Always write a natural confirmation message.
+- If the user asks for a reminder about a specific event (like "remind me about the Adesanya fight")
+  but does NOT specify when to be reminded, you MUST ask them when they want the reminder.
+  Do NOT set the reminder for the current time. Say something like:
+  "When would you like to be reminded? I can remind you a day before, a few hours before, etc."
 
 MULTI-ACTION REQUESTS:
 - If the user asks for multiple reminders in one message, set them ONE AT A TIME.
