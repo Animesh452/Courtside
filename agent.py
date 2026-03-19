@@ -33,7 +33,7 @@ from preferences import save_preference, list_all_preferences, get_preference_co
 # Model to use for tool calling
 # llama-3.1-8b-instant is more reliable for tool call formatting on Groq
 # Switch to "llama-3.3-70b-versatile" for better reasoning if it works for you
-MODEL = "llama-3.1-8b-instant"
+MODEL = "llama-3.3-70b-versatile"
 
 # ──────────────────────────────────────────────
 # Tool definitions (JSON schemas for the LLM)
