@@ -81,7 +81,7 @@ def fetch_espn_data(sport_key: str) -> dict:
     return {"success": True, "data": data, "config": config}
 
 
-def get_schedule(sport_key: str, limit: int = 20) -> dict:
+def get_schedule(sport_key: str, limit: int = 20, user_tz_name: str = "UTC") -> dict:
     """Get upcoming events from the calendar field."""
     result = fetch_espn_data(sport_key)
     if not result["success"]:
@@ -98,13 +98,13 @@ def get_schedule(sport_key: str, limit: int = 20) -> dict:
             if isinstance(entry, dict):
                 calendar.append({
                     "name": entry.get("label", "TBD"),
-                    "date": _format_date(entry.get("startDate", "")),
+                    "date": _format_date(entry.get("startDate", ""), user_tz_name),
                     "raw_date": entry.get("startDate", ""),
                 })
             elif isinstance(entry, str):
                 calendar.append({
                     "name": "Event",
-                    "date": _format_date(entry),
+                    "date": _format_date(entry, user_tz_name),
                     "raw_date": entry,
                 })
 
@@ -137,7 +137,7 @@ def get_schedule(sport_key: str, limit: int = 20) -> dict:
     }
 
 
-def get_scoreboard(sport_key: str) -> dict:
+def get_scoreboard(sport_key: str, user_tz_name: str = "UTC") -> dict:
     """Get detailed event data for current/nearest events."""
     result = fetch_espn_data(sport_key)
     if not result["success"]:
@@ -159,7 +159,7 @@ def get_scoreboard(sport_key: str) -> dict:
         parsed = {
             "name": event.get("name", "Unknown Event"),
             "short_name": event.get("shortName", ""),
-            "date": _format_date(event.get("date", "")),
+            "date": _format_date(event.get("date", ""), user_tz_name),
             "status": _get_status(event),
             "venue": _get_venue(event),
             "competitors": _get_competitors(event),
@@ -242,12 +242,24 @@ def get_cricket_data() -> dict:
 # Helpers
 # ──────────────────────────────────────────────
 
-def _format_date(date_str: str) -> str:
+def _format_date(date_str: str, user_tz_name: str = "UTC") -> str:
+    """Convert an ESPN ISO date to a friendly local time string."""
     if not date_str:
         return "Date TBD"
     try:
+        from zoneinfo import ZoneInfo
         dt = datetime.fromisoformat(date_str.replace("Z", "+00:00"))
-        return dt.strftime("%B %d, %Y at %I:%M %p UTC")
+
+        # Convert to user's timezone
+        try:
+            user_tz = ZoneInfo(user_tz_name)
+        except Exception:
+            user_tz = timezone.utc
+            user_tz_name = "UTC"
+
+        local_dt = dt.astimezone(user_tz)
+        tz_abbr = local_dt.strftime("%Z")
+        return local_dt.strftime(f"%B %d, %Y at %I:%M %p {tz_abbr}").lstrip("0")
     except (ValueError, TypeError):
         return date_str
 

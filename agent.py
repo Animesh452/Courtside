@@ -386,7 +386,7 @@ def execute_tool(tool_name: str, arguments: dict, user_timezone: str = "UTC") ->
             data = get_cricket_data()
             return format_cricket_for_llm(data, sport)
 
-        data = get_schedule(sport, limit=limit)
+        data = get_schedule(sport, limit=limit, user_tz_name=user_timezone)
         return format_schedule_for_llm(data)
 
     elif tool_name == "get_sports_scores":
@@ -399,7 +399,7 @@ def execute_tool(tool_name: str, arguments: dict, user_timezone: str = "UTC") ->
             data = get_cricket_data()
             return format_cricket_for_llm(data, sport)
 
-        data = get_scoreboard(sport)
+        data = get_scoreboard(sport, user_tz_name=user_timezone)
         return format_scoreboard_for_llm(data)
 
     elif tool_name == "get_cricket_scores":
