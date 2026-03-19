@@ -467,7 +467,7 @@ def _call_llm(client, model, messages, system_prompt, temperature=0.7):
         model=model,
         messages=[{"role": "system", "content": system_prompt}] + messages,
         temperature=temperature,
-        max_tokens=1024,
+        max_tokens=2048,
     )
 
 

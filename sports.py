@@ -380,13 +380,14 @@ def format_schedule_for_llm(data: dict) -> str:
     if not data.get("events"):
         return data.get("message", "No upcoming events found.")
 
-    lines = [f"=== {data['sport']} — Upcoming Schedule ==="]
-    lines.append(f"({data['event_count']} upcoming events found)\n")
+    lines = [f"=== {data['sport']} — Upcoming Schedule ===\n"]
 
     for i, event in enumerate(data["events"], 1):
         lines.append(f"{i}. {event['name']}")
         lines.append(f"   Date: {event['date']}")
         lines.append("")
+
+    lines.append("DISPLAY INSTRUCTION: List ALL events above to the user with their names and dates. Do not summarize or skip any.")
 
     return "\n".join(lines)
 
@@ -410,6 +411,8 @@ def format_scoreboard_for_llm(data: dict) -> str:
                 winner_str = " ✓" if comp.get("winner") else ""
                 lines.append(f"   • {comp['name']}{score_str}{winner_str}")
         lines.append("")
+
+    lines.append("DISPLAY INSTRUCTION: List ALL events above to the user with full details. Do not summarize or skip any.")
 
     return "\n".join(lines)
 
