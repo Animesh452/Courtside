@@ -1,5 +1,9 @@
 import os
 from dotenv import load_dotenv
+
+# Load environment variables FIRST — before any module reads them
+load_dotenv()
+
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
@@ -8,9 +12,6 @@ from groq import Groq
 from agent import run_agent
 from database import init_db
 from scheduler import start_scheduler
-
-# Load environment variables from .env file
-load_dotenv()
 
 # Initialize the database (creates tables if they don't exist)
 init_db()

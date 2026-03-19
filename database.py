@@ -1,80 +1,145 @@
 """
-database.py — SQLite database for Courtside.
+database.py — Database layer for Courtside.
 
-Stores reminders in a single file (courtside.db).
-No setup required — SQLite creates the file automatically on first run.
+Auto-detects which database to use:
+    - If DATABASE_URL env var exists → PostgreSQL (for Render deployment)
+    - Otherwise → SQLite (for local development)
 
-Schema:
-    reminders:
-        id              INTEGER PRIMARY KEY
-        event           TEXT        — what the reminder is about
-        remind_at       TEXT        — ISO datetime (UTC) of when to send the reminder
-        user_timezone   TEXT        — timezone of the user when they set the reminder
-        created_at      TEXT        — ISO datetime of when the reminder was created
-        sent            INTEGER     — 0 = not sent, 1 = sent
+Stores both reminders and preferences in the same database.
+All functions use parameterized queries to prevent SQL injection.
 """
 
+import os
 import sqlite3
 from datetime import datetime, timezone
 
-DB_PATH = "courtside.db"
+# ──────────────────────────────────────────────
+# Connection helpers
+# ──────────────────────────────────────────────
+
+def _get_database_url():
+    """Get DATABASE_URL lazily so dotenv has time to load."""
+    return os.getenv("DATABASE_URL")
+
+
+def _is_postgres() -> bool:
+    return _get_database_url() is not None
 
 
 def get_connection():
-    """Get a SQLite connection with row factory enabled."""
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row  # access columns by name
-    return conn
+    """Get a database connection (PostgreSQL or SQLite)."""
+    if _is_postgres():
+        import psycopg2
+        url = _get_database_url().replace("postgres://", "postgresql://", 1)
+        conn = psycopg2.connect(url)
+        conn.autocommit = False
+        return conn
+    else:
+        conn = sqlite3.connect("courtside.db")
+        conn.row_factory = sqlite3.Row
+        return conn
 
+
+def _dict_rows(cursor, rows) -> list:
+    """Convert rows to list of dicts (works for both SQLite and PostgreSQL)."""
+    if _is_postgres():
+        columns = [desc[0] for desc in cursor.description]
+        return [dict(zip(columns, row)) for row in rows]
+    else:
+        return [dict(row) for row in rows]
+
+
+def _placeholder() -> str:
+    """Return the correct placeholder for the database type."""
+    return "%s" if _is_postgres() else "?"
+
+
+# ──────────────────────────────────────────────
+# Schema initialization
+# ──────────────────────────────────────────────
 
 def init_db():
-    """Create the reminders table if it doesn't exist, and migrate if needed."""
+    """Create tables if they don't exist."""
+    p = _placeholder()
     conn = get_connection()
+    cur = conn.cursor()
 
-    # Create table if it doesn't exist (new installs)
-    conn.execute("""
+    # Use TEXT for SQLite, VARCHAR for PostgreSQL (TEXT works for both actually)
+    if _is_postgres():
+        serial = "SERIAL PRIMARY KEY"
+        int_default = "INTEGER DEFAULT 0"
+    else:
+        serial = "INTEGER PRIMARY KEY AUTOINCREMENT"
+        int_default = "INTEGER DEFAULT 0"
+
+    # Reminders table
+    cur.execute(f"""
         CREATE TABLE IF NOT EXISTS reminders (
-            id              INTEGER PRIMARY KEY AUTOINCREMENT,
+            id              {serial},
             event           TEXT NOT NULL,
             remind_at       TEXT NOT NULL,
             user_timezone   TEXT DEFAULT 'UTC',
             created_at      TEXT NOT NULL,
-            sent            INTEGER DEFAULT 0
+            sent            {int_default}
         )
     """)
 
-    # Migrate existing tables that don't have the user_timezone column
-    try:
-        conn.execute("SELECT user_timezone FROM reminders LIMIT 1")
-    except sqlite3.OperationalError:
-        # Column doesn't exist — add it
-        conn.execute("ALTER TABLE reminders ADD COLUMN user_timezone TEXT DEFAULT 'UTC'")
-        print("[Database] Migrated: added user_timezone column to reminders.")
+    # Preferences table (replaces ChromaDB for persistence)
+    cur.execute(f"""
+        CREATE TABLE IF NOT EXISTS preferences (
+            id              {serial},
+            category        TEXT NOT NULL,
+            value           TEXT NOT NULL,
+            detail          TEXT DEFAULT '',
+            created_at      TEXT NOT NULL
+        )
+    """)
 
     conn.commit()
-    conn.close()
 
+    # SQLite migration — add user_timezone if missing
+    if not _is_postgres():
+        try:
+            cur.execute("SELECT user_timezone FROM reminders LIMIT 1")
+        except sqlite3.OperationalError:
+            cur.execute("ALTER TABLE reminders ADD COLUMN user_timezone TEXT DEFAULT 'UTC'")
+            conn.commit()
+            print("[Database] Migrated: added user_timezone column.")
+
+    cur.close()
+    conn.close()
+    db_type = "PostgreSQL" if _is_postgres() else "SQLite"
+    print(f"[Database] Initialized ({db_type}).")
+
+
+# ──────────────────────────────────────────────
+# Reminders CRUD
+# ──────────────────────────────────────────────
 
 def add_reminder(event: str, remind_at: str, user_timezone: str = "UTC") -> dict:
-    """
-    Add a new reminder to the database.
-
-    Args:
-        event: Description of what to remind about
-        remind_at: ISO format datetime string (UTC) of when to send the reminder
-        user_timezone: The user's timezone when they set the reminder (e.g. "America/Phoenix")
-
-    Returns:
-        dict with the created reminder details
-    """
+    """Add a new reminder."""
+    p = _placeholder()
     created_at = datetime.now(timezone.utc).isoformat()
     conn = get_connection()
-    cursor = conn.execute(
-        "INSERT INTO reminders (event, remind_at, user_timezone, created_at, sent) VALUES (?, ?, ?, ?, 0)",
-        (event, remind_at, user_timezone, created_at),
-    )
-    reminder_id = cursor.lastrowid
+    cur = conn.cursor()
+
+    if _is_postgres():
+        cur.execute(
+            f"INSERT INTO reminders (event, remind_at, user_timezone, created_at, sent) "
+            f"VALUES ({p}, {p}, {p}, {p}, 0) RETURNING id",
+            (event, remind_at, user_timezone, created_at),
+        )
+        reminder_id = cur.fetchone()[0]
+    else:
+        cur.execute(
+            f"INSERT INTO reminders (event, remind_at, user_timezone, created_at, sent) "
+            f"VALUES ({p}, {p}, {p}, {p}, 0)",
+            (event, remind_at, user_timezone, created_at),
+        )
+        reminder_id = cur.lastrowid
+
     conn.commit()
+    cur.close()
     conn.close()
 
     return {
@@ -89,57 +154,129 @@ def add_reminder(event: str, remind_at: str, user_timezone: str = "UTC") -> dict
 
 def get_pending_reminders() -> list:
     """Get all reminders that are due and haven't been sent yet."""
+    p = _placeholder()
     now = datetime.now(timezone.utc).isoformat()
     conn = get_connection()
-    rows = conn.execute(
-        "SELECT * FROM reminders WHERE sent = 0 AND remind_at <= ?",
+    cur = conn.cursor()
+    cur.execute(
+        f"SELECT * FROM reminders WHERE sent = 0 AND remind_at <= {p}",
         (now,),
-    ).fetchall()
+    )
+    rows = cur.fetchall()
+    result = _dict_rows(cur, rows)
+    cur.close()
     conn.close()
-    return [dict(row) for row in rows]
+    return result
 
 
 def mark_reminder_sent(reminder_id: int):
-    """Mark a reminder as sent so it doesn't fire again."""
+    """Mark a reminder as sent."""
+    p = _placeholder()
     conn = get_connection()
-    conn.execute(
-        "UPDATE reminders SET sent = 1 WHERE id = ?",
-        (reminder_id,),
-    )
+    cur = conn.cursor()
+    cur.execute(f"UPDATE reminders SET sent = 1 WHERE id = {p}", (reminder_id,))
     conn.commit()
+    cur.close()
     conn.close()
-
-
-def get_all_reminders() -> list:
-    """Get all reminders (for listing to the user)."""
-    conn = get_connection()
-    rows = conn.execute(
-        "SELECT * FROM reminders ORDER BY remind_at ASC"
-    ).fetchall()
-    conn.close()
-    return [dict(row) for row in rows]
 
 
 def get_upcoming_reminders() -> list:
     """Get only future, unsent reminders."""
+    p = _placeholder()
     now = datetime.now(timezone.utc).isoformat()
     conn = get_connection()
-    rows = conn.execute(
-        "SELECT * FROM reminders WHERE sent = 0 AND remind_at > ? ORDER BY remind_at ASC",
+    cur = conn.cursor()
+    cur.execute(
+        f"SELECT * FROM reminders WHERE sent = 0 AND remind_at > {p} ORDER BY remind_at ASC",
         (now,),
-    ).fetchall()
+    )
+    rows = cur.fetchall()
+    result = _dict_rows(cur, rows)
+    cur.close()
     conn.close()
-    return [dict(row) for row in rows]
+    return result
 
 
 def delete_reminder(reminder_id: int) -> bool:
-    """Delete a reminder by ID. Returns True if a row was deleted."""
+    """Delete a reminder by ID."""
+    p = _placeholder()
     conn = get_connection()
-    cursor = conn.execute(
-        "DELETE FROM reminders WHERE id = ?",
-        (reminder_id,),
-    )
+    cur = conn.cursor()
+    cur.execute(f"DELETE FROM reminders WHERE id = {p}", (reminder_id,))
+    deleted = cur.rowcount > 0
     conn.commit()
-    deleted = cursor.rowcount > 0
+    cur.close()
+    conn.close()
+    return deleted
+
+
+# ──────────────────────────────────────────────
+# Preferences CRUD
+# ──────────────────────────────────────────────
+
+def add_preference(category: str, value: str, detail: str = "") -> dict:
+    """Add or update a user preference."""
+    p = _placeholder()
+    conn = get_connection()
+    cur = conn.cursor()
+
+    # Check if this preference already exists
+    cur.execute(
+        f"SELECT id FROM preferences WHERE category = {p} AND value = {p}",
+        (category, value),
+    )
+    existing = cur.fetchone()
+
+    if existing:
+        # Already exists — no need to duplicate
+        cur.close()
+        conn.close()
+        return {"id": existing[0], "category": category, "value": value, "exists": True}
+
+    created_at = datetime.now(timezone.utc).isoformat()
+
+    if _is_postgres():
+        cur.execute(
+            f"INSERT INTO preferences (category, value, detail, created_at) "
+            f"VALUES ({p}, {p}, {p}, {p}) RETURNING id",
+            (category, value, detail, created_at),
+        )
+        pref_id = cur.fetchone()[0]
+    else:
+        cur.execute(
+            f"INSERT INTO preferences (category, value, detail, created_at) "
+            f"VALUES ({p}, {p}, {p}, {p})",
+            (category, value, detail, created_at),
+        )
+        pref_id = cur.lastrowid
+
+    conn.commit()
+    cur.close()
+    conn.close()
+
+    return {"id": pref_id, "category": category, "value": value, "exists": False}
+
+
+def get_all_preferences() -> list:
+    """Get all stored preferences."""
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute("SELECT * FROM preferences ORDER BY created_at ASC")
+    rows = cur.fetchall()
+    result = _dict_rows(cur, rows)
+    cur.close()
+    conn.close()
+    return result
+
+
+def delete_preference(pref_id: int) -> bool:
+    """Delete a preference by ID."""
+    p = _placeholder()
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute(f"DELETE FROM preferences WHERE id = {p}", (pref_id,))
+    deleted = cur.rowcount > 0
+    conn.commit()
+    cur.close()
     conn.close()
     return deleted
