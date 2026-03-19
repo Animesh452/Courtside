@@ -359,7 +359,10 @@ CRITICAL RULES:
 4. If a tool returns no data or an error, tell the user clearly.
 5. You CAN share general sports knowledge (rules, history, well-known facts) without tools.
    But clearly distinguish between live data and general knowledge.
-6. NEVER output raw JSON, tool call arguments, or internal data structures to the user."""
+6. NEVER output raw JSON, tool call arguments, or internal data structures to the user.
+7. When listing events, scores, or schedules from a tool, ALWAYS list every item with its details.
+   NEVER say "here are the events" without actually listing them. Show names, dates, and times.
+   ALWAYS show times in the user's local timezone ({tz_abbr}) — never show UTC unless asked."""
 
 
 # ──────────────────────────────────────────────
