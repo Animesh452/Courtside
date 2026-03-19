@@ -68,12 +68,14 @@ def fetch_espn_data(sport_key: str) -> dict:
     """Fetch the full scoreboard response from ESPN for a standard sport."""
     config = SUPPORTED_SPORTS[sport_key.lower().strip()]
     url = f"{BASE_URL}/{config['sport']}/{config['league']}/scoreboard"
+    headers = {"User-Agent": "Courtside/1.0 (Sports Assistant)"}
 
     try:
-        response = requests.get(url, timeout=10)
+        response = requests.get(url, headers=headers, timeout=10)
         response.raise_for_status()
         data = response.json()
     except requests.RequestException as e:
+        print(f"[Sports] ESPN fetch failed for {sport_key}: {e}")
         return {"success": False, "error": f"Failed to fetch data: {str(e)}"}
 
     return {"success": True, "data": data, "config": config}
@@ -183,6 +185,7 @@ def get_cricket_data() -> dict:
         response = requests.get(
             CRICKET_URL,
             params={"sport": "cricket", "region": "in", "tz": "Asia/Calcutta"},
+            headers={"User-Agent": "Courtside/1.0 (Sports Assistant)"},
             timeout=10,
         )
         response.raise_for_status()
