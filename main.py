@@ -46,7 +46,14 @@ async def chat(request: ChatRequest):
 app.mount("/static", StaticFiles(directory="static"), name="static")
 
 
+# Health check endpoint for UptimeRobot and monitoring
+@app.get("/health")
+async def health():
+    return {"status": "ok"}
+
+
 # GET / - serves the chat page
 @app.get("/")
+@app.head("/")
 async def root():
     return FileResponse("static/index.html")

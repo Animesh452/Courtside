@@ -17,7 +17,6 @@ This is the "on-demand" RAG pattern from the project reference doc:
 
 import requests
 from bs4 import BeautifulSoup
-import chromadb
 import uuid
 
 
@@ -120,6 +119,9 @@ def retrieve_relevant_chunks(query: str, chunks: list[str], top_k: int = 5) -> l
     """
     if not chunks:
         return []
+
+    # Lazy import — only loads ChromaDB (and downloads model) when RAG is actually used
+    import chromadb
 
     # Create an ephemeral (in-memory) ChromaDB client — dies when function ends
     client = chromadb.EphemeralClient()
