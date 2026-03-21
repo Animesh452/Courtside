@@ -15,7 +15,6 @@ import json
 import os
 from datetime import datetime, timezone
 from zoneinfo import ZoneInfo
-from groq import Groq
 from sports import (
     get_sports_data,
     get_schedule,
@@ -30,10 +29,9 @@ from reminders import create_reminder, list_reminders, remove_reminder
 from rag import on_demand_rag
 from preferences import save_preference, list_all_preferences, get_preference_context
 
-# Model to use for tool calling
-# llama-3.1-8b-instant is more reliable for tool call formatting on Groq
-# Switch to "llama-3.3-70b-versatile" for better reasoning if it works for you
-MODEL = "llama-3.3-70b-versatile"
+# Gemini model via OpenAI-compatible API
+# gemini-2.5-flash: fast, free tier (10 RPM, 250 RPD, 250k TPM), great at tool calling
+MODEL = "gemini-2.5-flash"
 
 # ──────────────────────────────────────────────
 # Tool definitions (JSON schemas for the LLM)
@@ -450,7 +448,7 @@ def execute_tool(tool_name: str, arguments: dict, user_timezone: str = "UTC") ->
 # ──────────────────────────────────────────────
 
 def _call_llm_with_tools(client, model, messages, system_prompt, tools, temperature=0.5):
-    """Make an LLM call with tools, handling the Groq tool_use_failed error."""
+    """Make an LLM call with tools."""
     return client.chat.completions.create(
         model=model,
         messages=[{"role": "system", "content": system_prompt}] + messages,
@@ -471,16 +469,13 @@ def _call_llm(client, model, messages, system_prompt, temperature=0.7):
     )
 
 
-def run_agent(client: Groq, user_message: str, chat_history: list, user_timezone: str = "UTC") -> str:
+def run_agent(client, user_message: str, chat_history: list, user_timezone: str = "UTC") -> str:
     """
     The core agentic loop:
     1. Send the message + tools to the LLM
     2. If the LLM wants to call a tool, execute it
     3. Send the tool result back to the LLM
     4. Return the final response
-
-    Includes retry logic: if the primary model fails on tool calling,
-    retries with lower temperature, then falls back to the smaller model.
     """
     # Add the user message to history
     chat_history.append({"role": "user", "content": user_message})
@@ -488,83 +483,65 @@ def run_agent(client: Groq, user_message: str, chat_history: list, user_timezone
     # Build system prompt fresh each call (includes current time + user's timezone)
     system_prompt = build_system_prompt(user_timezone, user_message)
 
-    # Step 1: Send message to LLM with tool definitions
-    # Try primary model, retry with lower temp, then fallback model
-    response = None
-    temps_to_try = [0.5, 0.2, 0.1]  # progressively more deterministic
-
-    for temp in temps_to_try:
-        try:
-            response = _call_llm_with_tools(
-                client, MODEL, chat_history, system_prompt, TOOLS, temp
-            )
-            break  # success — exit retry loop
-        except Exception as e:
-            error_str = str(e)
-            if "tool_use_failed" in error_str:
-                print(f"[Agent] Tool call failed at temp={temp}, retrying...")
-                continue
-            else:
-                # Non-tool error — don't retry, just raise
-                raise e
-
-    if response is None:
-        # All retries failed — respond without tools
-        chat_history.append({"role": "assistant", "content": "I had trouble using my tools. Let me try to answer directly."})
-        response = _call_llm(client, MODEL, chat_history, system_prompt)
-        reply = response.choices[0].message.content
-        chat_history.append({"role": "assistant", "content": reply})
-        return reply
-
-    assistant_message = response.choices[0].message
-
-    # Step 2: Check if the LLM wants to call a tool
-    if assistant_message.tool_calls:
-        # Add the assistant's tool call message to history
-        chat_history.append({
-            "role": "assistant",
-            "content": assistant_message.content or "",
-            "tool_calls": [
-                {
-                    "id": tc.id,
-                    "type": "function",
-                    "function": {
-                        "name": tc.function.name,
-                        "arguments": tc.function.arguments,
-                    },
-                }
-                for tc in assistant_message.tool_calls
-            ],
-        })
-
-        # Step 3: Execute each tool call and collect results
-        for tool_call in assistant_message.tool_calls:
-            tool_name = tool_call.function.name
-            try:
-                arguments = json.loads(tool_call.function.arguments)
-            except json.JSONDecodeError:
-                arguments = {}
-
-            # Run the tool
-            tool_result = execute_tool(tool_name, arguments, user_timezone)
-
-            # Add the tool result to history
-            chat_history.append({
-                "role": "tool",
-                "tool_call_id": tool_call.id,
-                "content": tool_result,
-            })
-
-        # Step 4: Send the tool results back to the LLM for a final response
-        final_response = _call_llm(
-            client, MODEL, chat_history, system_prompt
+    try:
+        # Step 1: Send message to LLM with tool definitions
+        response = _call_llm_with_tools(
+            client, MODEL, chat_history, system_prompt, TOOLS
         )
 
-        reply = final_response.choices[0].message.content
+        assistant_message = response.choices[0].message
 
-    else:
-        # No tool call — the LLM responded directly (general chat)
-        reply = assistant_message.content
+        # Step 2: Check if the LLM wants to call a tool
+        if assistant_message.tool_calls:
+            # Add the assistant's tool call message to history
+            chat_history.append({
+                "role": "assistant",
+                "content": assistant_message.content or "",
+                "tool_calls": [
+                    {
+                        "id": tc.id,
+                        "type": "function",
+                        "function": {
+                            "name": tc.function.name,
+                            "arguments": tc.function.arguments,
+                        },
+                    }
+                    for tc in assistant_message.tool_calls
+                ],
+            })
+
+            # Step 3: Execute each tool call and collect results
+            for tool_call in assistant_message.tool_calls:
+                tool_name = tool_call.function.name
+                try:
+                    arguments = json.loads(tool_call.function.arguments)
+                except json.JSONDecodeError:
+                    arguments = {}
+
+                # Run the tool
+                tool_result = execute_tool(tool_name, arguments, user_timezone)
+
+                # Add the tool result to history
+                chat_history.append({
+                    "role": "tool",
+                    "tool_call_id": tool_call.id,
+                    "content": tool_result,
+                })
+
+            # Step 4: Send the tool results back to the LLM for a final response
+            final_response = _call_llm(
+                client, MODEL, chat_history, system_prompt
+            )
+
+            reply = final_response.choices[0].message.content
+
+        else:
+            # No tool call — the LLM responded directly (general chat)
+            reply = assistant_message.content
+
+    except Exception as e:
+        print(f"[Agent] Error: {e}")
+        reply = "Sorry, something went wrong. Please try again."
 
     # Add the final reply to history
     chat_history.append({"role": "assistant", "content": reply})

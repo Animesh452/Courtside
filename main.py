@@ -8,7 +8,7 @@ from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
-from groq import Groq
+from openai import OpenAI
 from agent import run_agent
 from database import init_db
 from scheduler import start_scheduler
@@ -19,8 +19,11 @@ init_db()
 # Start the background reminder scheduler
 start_scheduler()
 
-# Initialize the Groq client with your API key
-client = Groq(api_key=os.getenv("GROQ_API_KEY"))
+# Initialize the Gemini client via OpenAI-compatible API
+client = OpenAI(
+    api_key=os.getenv("GEMINI_API_KEY"),
+    base_url="https://generativelanguage.googleapis.com/v1beta/openai/"
+)
 
 # Initialize the FastAPI app
 app = FastAPI()
@@ -48,6 +51,7 @@ app.mount("/static", StaticFiles(directory="static"), name="static")
 
 # Health check endpoint for UptimeRobot and monitoring
 @app.get("/health")
+@app.head("/health")
 async def health():
     return {"status": "ok"}
 
