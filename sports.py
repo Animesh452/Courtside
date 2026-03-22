@@ -27,8 +27,6 @@ SUPPORTED_SPORTS = {
     "mma": {"sport": "mma", "league": "ufc", "display": "UFC"},
     "pfl": {"sport": "mma", "league": "pfl", "display": "PFL"},
     "bellator": {"sport": "mma", "league": "bellator", "display": "Bellator"},
-    "one championship": {"sport": "mma", "league": "one", "display": "ONE Championship"},
-    "one": {"sport": "mma", "league": "one", "display": "ONE Championship"},
     # Motorsport
     "f1": {"sport": "racing", "league": "f1", "display": "Formula 1"},
     "formula 1": {"sport": "racing", "league": "f1", "display": "Formula 1"},
@@ -110,17 +108,27 @@ def get_schedule(sport_key: str, limit: int = 20, user_tz_name: str = "UTC") -> 
         raw_calendar = leagues[0].get("calendar", [])
         for entry in raw_calendar:
             if isinstance(entry, dict):
+                # Named event (UFC, F1, PFL style) — has label and startDate
                 calendar.append({
                     "name": entry.get("label", "TBD"),
                     "date": _format_date(entry.get("startDate", ""), user_tz_name),
                     "raw_date": entry.get("startDate", ""),
                 })
             elif isinstance(entry, str):
-                calendar.append({
-                    "name": "Event",
-                    "date": _format_date(entry, user_tz_name),
-                    "raw_date": entry,
-                })
+                # Date-only entry (soccer, tennis style) — just a date string
+                # Skip these — we'll use the events array instead
+                pass
+
+    # If calendar had no named events, fall back to the events array
+    # This gives us actual matchup names for soccer, tennis, etc.
+    if not calendar:
+        events = data.get("events", [])
+        for event in events:
+            calendar.append({
+                "name": event.get("name", event.get("shortName", "Event")),
+                "date": _format_date(event.get("date", ""), user_tz_name),
+                "raw_date": event.get("date", ""),
+            })
 
     # Filter to only future events
     now = datetime.now(timezone.utc)

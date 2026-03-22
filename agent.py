@@ -47,7 +47,7 @@ TOOLS = [
             "description": (
                 "Get the upcoming schedule of events for a sport. Use this when the user "
                 "asks about upcoming games, fights, races, matches, fixtures, or schedules. "
-                "Supported sports: UFC, PFL, Bellator, ONE Championship, F1, NFL, NBA, MLB, NHL, "
+                "Supported sports: UFC, PFL, Bellator, F1, NFL, NBA, MLB, NHL, "
                 "Tennis (ATP/WTA), Premier League, La Liga, MLS, Serie A, Bundesliga, "
                 "Ligue 1, Champions League, Europa League, Eredivisie, Liga MX, Cricket."
             ),
@@ -58,7 +58,7 @@ TOOLS = [
                         "type": "string",
                         "description": (
                             "The sport to look up. Use one of these exact keys: "
-                            "ufc, pfl, bellator, one, f1, nfl, nba, mlb, nhl, "
+                            "ufc, pfl, bellator, f1, nfl, nba, mlb, nhl, "
                             "atp, wta, tennis, premier league, epl, la liga, mls, "
                             "serie a, bundesliga, ligue 1, champions league, ucl, "
                             "europa league, eredivisie, liga mx, "
@@ -81,7 +81,7 @@ TOOLS = [
             "description": (
                 "Get current/recent scores and results for a sport. Use this when the user "
                 "asks about live scores, recent results, who won, or what's happening now. "
-                "Supported sports: UFC, PFL, Bellator, ONE Championship, F1, NFL, NBA, MLB, NHL, "
+                "Supported sports: UFC, PFL, Bellator, F1, NFL, NBA, MLB, NHL, "
                 "Tennis (ATP/WTA), Premier League, La Liga, MLS, Serie A, Bundesliga, "
                 "Ligue 1, Champions League, Europa League, Eredivisie, Liga MX, Cricket."
             ),
@@ -92,7 +92,7 @@ TOOLS = [
                         "type": "string",
                         "description": (
                             "The sport to look up. Use one of these exact keys: "
-                            "ufc, pfl, bellator, one, f1, nfl, nba, mlb, nhl, "
+                            "ufc, pfl, bellator, f1, nfl, nba, mlb, nhl, "
                             "atp, wta, tennis, premier league, epl, la liga, mls, "
                             "serie a, bundesliga, ligue 1, champions league, ucl, "
                             "europa league, eredivisie, liga mx, "
@@ -386,7 +386,7 @@ def execute_tool(tool_name: str, arguments: dict, user_timezone: str = "UTC") ->
         limit = min(max(limit, 1), 50)  # clamp between 1 and 50
 
         if sport not in SUPPORTED_SPORTS:
-            return f"Sport '{sport}' is not supported. Supported: UFC, PFL, Bellator, ONE, F1, NFL, NBA, MLB, NHL, ATP, WTA, Premier League, La Liga, Serie A, Bundesliga, Ligue 1, Champions League, Europa League, MLS, Eredivisie, Liga MX, Cricket."
+            return f"Sport '{sport}' is not supported. Supported: UFC, PFL, Bellator, F1, NFL, NBA, MLB, NHL, ATP, WTA, Premier League, La Liga, Serie A, Bundesliga, Ligue 1, Champions League, Europa League, MLS, Eredivisie, Liga MX, Cricket."
 
         if SUPPORTED_SPORTS[sport]["sport"] == "cricket":
             data = get_cricket_data()
@@ -399,7 +399,7 @@ def execute_tool(tool_name: str, arguments: dict, user_timezone: str = "UTC") ->
         sport = arguments.get("sport", "").lower().strip()
 
         if sport not in SUPPORTED_SPORTS:
-            return f"Sport '{sport}' is not supported. Supported: UFC, PFL, Bellator, ONE, F1, NFL, NBA, MLB, NHL, ATP, WTA, Premier League, La Liga, Serie A, Bundesliga, Ligue 1, Champions League, Europa League, MLS, Eredivisie, Liga MX, Cricket."
+            return f"Sport '{sport}' is not supported. Supported: UFC, PFL, Bellator, F1, NFL, NBA, MLB, NHL, ATP, WTA, Premier League, La Liga, Serie A, Bundesliga, Ligue 1, Champions League, Europa League, MLS, Eredivisie, Liga MX, Cricket."
 
         if SUPPORTED_SPORTS[sport]["sport"] == "cricket":
             data = get_cricket_data()
