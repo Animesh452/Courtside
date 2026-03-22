@@ -25,6 +25,10 @@ SUPPORTED_SPORTS = {
     # MMA
     "ufc": {"sport": "mma", "league": "ufc", "display": "UFC"},
     "mma": {"sport": "mma", "league": "ufc", "display": "UFC"},
+    "pfl": {"sport": "mma", "league": "pfl", "display": "PFL"},
+    "bellator": {"sport": "mma", "league": "bellator", "display": "Bellator"},
+    "one championship": {"sport": "mma", "league": "one", "display": "ONE Championship"},
+    "one": {"sport": "mma", "league": "one", "display": "ONE Championship"},
     # Motorsport
     "f1": {"sport": "racing", "league": "f1", "display": "Formula 1"},
     "formula 1": {"sport": "racing", "league": "f1", "display": "Formula 1"},
@@ -33,6 +37,10 @@ SUPPORTED_SPORTS = {
     "nba": {"sport": "basketball", "league": "nba", "display": "NBA"},
     "mlb": {"sport": "baseball", "league": "mlb", "display": "MLB"},
     "nhl": {"sport": "hockey", "league": "nhl", "display": "NHL"},
+    # Tennis
+    "tennis": {"sport": "tennis", "league": "atp", "display": "Tennis (ATP)"},
+    "atp": {"sport": "tennis", "league": "atp", "display": "Tennis (ATP)"},
+    "wta": {"sport": "tennis", "league": "wta", "display": "Tennis (WTA)"},
     # Soccer
     "premier league": {"sport": "soccer", "league": "eng.1", "display": "Premier League"},
     "epl": {"sport": "soccer", "league": "eng.1", "display": "Premier League"},
@@ -40,6 +48,12 @@ SUPPORTED_SPORTS = {
     "mls": {"sport": "soccer", "league": "usa.1", "display": "MLS"},
     "serie a": {"sport": "soccer", "league": "ita.1", "display": "Serie A"},
     "bundesliga": {"sport": "soccer", "league": "ger.1", "display": "Bundesliga"},
+    "ligue 1": {"sport": "soccer", "league": "fra.1", "display": "Ligue 1"},
+    "champions league": {"sport": "soccer", "league": "uefa.champions", "display": "Champions League"},
+    "ucl": {"sport": "soccer", "league": "uefa.champions", "display": "Champions League"},
+    "europa league": {"sport": "soccer", "league": "uefa.europa", "display": "Europa League"},
+    "eredivisie": {"sport": "soccer", "league": "ned.1", "display": "Eredivisie"},
+    "liga mx": {"sport": "soccer", "league": "mex.1", "display": "Liga MX"},
     # Cricket — handled separately via CRICKET_URL
     "cricket": {"sport": "cricket", "league": "cricket", "display": "Cricket"},
     "ipl": {"sport": "cricket", "league": "cricket", "display": "Cricket (IPL)"},
