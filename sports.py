@@ -106,6 +106,8 @@ def get_schedule(sport_key: str, limit: int = 20, user_tz_name: str = "UTC") -> 
     leagues = data.get("leagues", [])
     if leagues:
         raw_calendar = leagues[0].get("calendar", [])
+        sport_display = config["display"]
+
         for entry in raw_calendar:
             if isinstance(entry, dict):
                 # Named event (UFC, F1, PFL style) — has label and startDate
@@ -115,20 +117,26 @@ def get_schedule(sport_key: str, limit: int = 20, user_tz_name: str = "UTC") -> 
                     "raw_date": entry.get("startDate", ""),
                 })
             elif isinstance(entry, str):
-                # Date-only entry (soccer, tennis style) — just a date string
-                # Skip these — we'll use the events array instead
-                pass
+                # Date-only entry (soccer, tennis style) — use sport name as label
+                calendar.append({
+                    "name": f"{sport_display} Matchday",
+                    "date": _format_date(entry, user_tz_name),
+                    "raw_date": entry,
+                })
 
-    # If calendar had no named events, fall back to the events array
-    # This gives us actual matchup names for soccer, tennis, etc.
-    if not calendar:
-        events = data.get("events", [])
-        for event in events:
-            calendar.append({
-                "name": event.get("name", event.get("shortName", "Event")),
-                "date": _format_date(event.get("date", ""), user_tz_name),
-                "raw_date": event.get("date", ""),
-            })
+    # Also check the events array for today's actual matches with names
+    # These have real matchup info like "Arsenal vs Chelsea"
+    today_events = data.get("events", [])
+    if today_events and not any(isinstance(e, dict) and e.get("label") for e in (leagues[0].get("calendar", []) if leagues else [])):
+        # Prepend today's named events at the top
+        for event in today_events:
+            name = event.get("name", event.get("shortName", ""))
+            if name:
+                calendar.insert(0, {
+                    "name": name,
+                    "date": _format_date(event.get("date", ""), user_tz_name),
+                    "raw_date": event.get("date", ""),
+                })
 
     # Filter to only future events
     now = datetime.now(timezone.utc)
