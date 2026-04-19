@@ -51,12 +51,12 @@ Every message flows through the agentic loop. The LLM reads tool definitions and
 | LLM | Gemini 2.5 Flash (Google) | Free tier with 250 RPD / 250k TPM, OpenAI-compatible format, strong tool calling |
 | Backend | FastAPI (Python) | Lightweight, async-ready, easy to deploy |
 | Frontend | Single HTML file | No build tools, no React — focus is on the backend and AI architecture |
-| Database | PostgreSQL (Render) / SQLite (local) | Auto-detected via `DATABASE_URL` — PostgreSQL for production persistence, SQLite for local dev |
+| Database | PostgreSQL (Neon) / SQLite (local) | Auto-detected via `DATABASE_URL` — PostgreSQL on Neon free tier for production persistence, SQLite for local dev |
 | Scheduler | APScheduler | Python-native background jobs, no external dependencies |
 | Notifications | Resend API | HTTP-based email delivery — Render free tier blocks SMTP ports, Resend uses HTTPS |
 | RAG | Wikipedia + keyword scoring | On-demand fetch, chunk, score, retrieve — no embedding model needed, zero cold-start overhead |
 | Sports Data | ESPN Unofficial API | Free, no auth required, covers all major sports |
-| Deployment | Render (free tier) | Auto-deploy from GitHub, free PostgreSQL add-on, UptimeRobot keepalive |
+| Deployment | Render (free tier) | Auto-deploy from GitHub, UptimeRobot keepalive |
 
 **Evolution of the stack:** The project started with Groq (Llama 3.1 8B), SQLite, Gmail SMTP, and ChromaDB embeddings. Each was replaced as deployment constraints surfaced — Groq hit rate limits, SMTP was blocked on Render, ChromaDB downloaded an 80MB embedding model on every cold start. Each swap was a one-file change thanks to the modular architecture.
 
@@ -151,7 +151,7 @@ The original implementation used ChromaDB with the all-MiniLM-L6-v2 embedding mo
 
 ### Why PostgreSQL instead of SQLite for production?
 
-SQLite is a single file with zero setup — perfect for local development. But Render's free tier has an ephemeral filesystem that resets on every deploy. Reminders set for next month would be wiped. PostgreSQL on Render's free tier gives persistent storage. The `database.py` module auto-detects which to use via the `DATABASE_URL` environment variable — same code, different backend.
+SQLite is a single file with zero setup — perfect for local development. But Render's free tier has an ephemeral filesystem that resets on every deploy. Reminders set for next month would be wiped. PostgreSQL gives persistent storage — originally on Render's free tier, now on Neon (Render's free PostgreSQL expires after 90 days; Neon's doesn't). The `database.py` module auto-detects which to use via the `DATABASE_URL` environment variable — same code, different backend. Migrating from Render PostgreSQL to Neon was a zero-code-change swap of a single environment variable.
 
 ### Why Resend instead of Gmail SMTP?
 
@@ -172,7 +172,7 @@ The goal of this project is to demonstrate AI engineering — agentic systems, R
 The app is deployed on Render's free tier. A few things to know:
 
 - **Cold starts** — Free tier spins down after 15 minutes of inactivity. UptimeRobot pings the `/health` endpoint every 5 minutes to keep it alive.
-- **PostgreSQL** — Render's free PostgreSQL add-on provides persistent storage for reminders and preferences.
+- **PostgreSQL** — Hosted on Neon's free tier (no expiration, 0.5 GB storage). Render's free PostgreSQL expired after 90 days — Neon is a drop-in replacement with no code changes, just a new `DATABASE_URL`.
 - **Auto-deploy** — Every push to `main` triggers a redeploy automatically.
 - **Environment variables** — `GEMINI_API_KEY`, `RESEND_API_KEY`, `GMAIL_ADDRESS`, `USER_TIMEZONE`, and `DATABASE_URL` are all set in Render's dashboard.
 
