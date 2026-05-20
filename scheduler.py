@@ -100,17 +100,17 @@ def check_reminders():
 def start_scheduler():
     """
     Start the background scheduler.
-    Runs check_reminders() every 60 seconds.
+    Runs check_reminders() every 300 seconds.
     """
     scheduler = BackgroundScheduler()
     scheduler.add_job(
         check_reminders,
         "interval",
-        seconds=60,
+        seconds=300,
         max_instances=1,
         coalesce=True,
         misfire_grace_time=120,
     )
     scheduler.start()
-    print("[Scheduler] Background reminder checker started (checking every 60s).")
+    print("[Scheduler] Background reminder checker started (checking every 300s).")
     return scheduler

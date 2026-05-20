@@ -23,7 +23,7 @@ FastAPI Backend ──► Agentic Tool Loop (Gemini 2.5 Flash decides which tool
     │                    └── Direct Chat (LLM answers from knowledge)
     │
     ▼
-APScheduler (background) ──► checks PostgreSQL every 60s ──► sends email via Resend API
+APScheduler (background) ──► checks PostgreSQL every 5 min ──► sends email via Resend API
 ```
 
 Every message flows through the agentic loop. The LLM reads tool definitions and autonomously decides whether to fetch live data, search for context, set a reminder, or just answer directly. No hardcoded `if/else` routing.
@@ -38,7 +38,7 @@ Every message flows through the agentic loop. The LLM reads tool definitions and
 
 **On-Demand RAG** — When a deep question is asked (player history, matchup background, rules of a sport), the system fetches Wikipedia content, chunks it into passages, scores chunks by keyword relevance, and uses the best chunks as LLM context. Data is discarded after each response — zero maintenance, no embedding model required.
 
-**Event Reminders** — Set reminders via natural language ("remind me about UFC 327 on April 12 at 5pm"). Stored in PostgreSQL, checked every 60 seconds by APScheduler, delivered via Resend email API. Timezone-aware — the browser sends the user's timezone automatically and each reminder stores the timezone it was created in.
+**Event Reminders** — Set reminders via natural language ("remind me about UFC 327 on April 12 at 5pm"). Stored in PostgreSQL, checked every 5 minutes by APScheduler, delivered via Resend email API. Timezone-aware — the browser sends the user's timezone automatically and each reminder stores the timezone it was created in.
 
 **Preference Store** — PostgreSQL table remembers which sports and teams you follow. Personalizes responses over time ("any upcoming events?" returns UFC schedule if it knows you follow UFC). Persists across server restarts.
 
